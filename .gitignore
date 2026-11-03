@@ -1,0 +1,27 @@
+# Only publish the program and its bundled Python runtime.
+/*
+!/.gitignore
+!/.gitattributes
+!/README.md
+!/使用说明.md
+!/*.py
+!/*.ps1
+!/*.cmd
+!/*.vbs
+!/static/
+!/runtime/
+!/tests/
+/tests/*
+!/tests/test_behavior.py
+!/config/
+/config/*
+!/config/manifest.json
+
+# Never version local credentials, settings, downloaded papers or process state.
+**/__pycache__/
+*.pyc
+*.pyo
+*.dat
+*.tmp
+.env
+.env.*
