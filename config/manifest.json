@@ -54,6 +54,8 @@
     "tasks.py",
     "taxonomy.py",
     "tests\\test_behavior.py",
+    "tests\\test_evening.py",
+    "tests\\test_period_selection.py",
     "uninstall.ps1",
     "使用说明.md",
     "停止自动抓取.cmd",

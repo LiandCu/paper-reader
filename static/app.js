@@ -163,8 +163,8 @@ function renderResults() {
   if (!entries.length) {
     const fresh = data.stats.papers===0;
     $("results").replaceChildren(empty(fresh ? "从第一份论文速览开始" : "没有匹配的内容",
-      fresh ? "点击「立即获取」，保存最近日、周、月榜。没有 DeepSeek API 也可以先收集作者摘要。自动获取默认关闭。" : "试试调整日期、标签或处理状态。没有标签的论文可以在「未分类」中找到。",
-      fresh ? "获取最新榜单" : null));
+      fresh ? "点击「获取论文」，检查近三天日榜、本周榜和本月榜。尚未配置 DeepSeek 时也可以保存摘要。" : "试试调整日期、标签或处理状态。没有标签的论文可以在「未分类」中找到。",
+      fresh ? "获取论文" : null));
     return;
   }
   $("results").replaceChildren(...entries.slice((page-1)*size,page*size).map(reportMode ? reportCard : paperCard));
@@ -246,7 +246,7 @@ function renderStatus(status) {
   $("start-ai").disabled=!!status.ai?.running || !pendingPapers().length;
   const remaining=Math.max(0,(settingsData?.settings.daily_ai_limit || 30)-(data?.stats.usage.calls || 0));
   const automatic=!!settingsData?.settings.ai_after_fetch;
-  $("fetch-description").textContent="从 Hugging Face 获取实际发布的最新日榜及已结束的周月榜，每期最多 20 篇。"+(automatic ? "完成后自动翻译与简介，每轮最多 20 篇。" : "当前只保存摘要，不自动调用 AI。");
+  $("fetch-ai-note").textContent=automatic ? "获取后自动翻译与简介。" : "当前仅保存摘要。";
   $("task-message").textContent="当前筛选待解读 "+pendingPapers().length+" 篇 · 每批最多 20 篇 · 今日剩余 "+remaining+" 次 AI 调用。获取后自动解读："+(automatic ? "已开启。" : "已关闭。");
 }
 async function loadSettings(fields=null) {
@@ -257,7 +257,13 @@ async function loadSettings(fields=null) {
     if (field.type==="checkbox") field.checked = value; else field.value = value;
   }
   $("key-state").textContent = settingsData.has_key ? "已保存加密密钥；界面不会回显。" : "未设置密钥，仅获取原始摘要。";
-  $("schedule-state").textContent = settingsData.task_installed ? "Windows 计划任务已登记（以总开关控制执行）。" : "未登记 Windows 计划任务。";
+  let scheduleState="晚间自动补做已关闭。";
+  if(settingsData.settings.auto) {
+    scheduleState=settingsData.task_installed
+      ? "已登记 Windows 计划任务，每天 "+settingsData.settings.time+"（北京时间）补做。"
+      : "未检测到 Windows 计划任务。点击「保存自动获取设置」可重新登记。";
+  }
+  $("schedule-state").textContent=scheduleState;
   if(!fields || fields.includes("daily_ai_limit")) $("ai-settings-state").textContent="已保存：每日最多 "+settingsData.settings.daily_ai_limit+" 次 AI 请求；获取后自动解读"+(settingsData.settings.ai_after_fetch ? "已开启。" : "已关闭。");
   $("manual-period").value ||= settingsData.latest[0].period;
   if(data) renderStatus(data.status);
@@ -283,7 +289,7 @@ for (const id of ["query","start","end","state","tag-mode"]) $(id).addEventListe
   clearTimeout(filterTimer); page=1; filterTimer=setTimeout(()=>loadData().catch(e=>notify(e.message)),250);
 });
 action("reset",async()=>{selectedTags.clear(); for(const id of ["query","start","end","state"]) $(id).value=""; $("tag-mode").value="any"; page=1; await loadData();});
-action("update",async()=>{await api("/api/run",{});notify("已开始检查实际发布的榜单；获取后按设置决定是否自动解读");});
+action("update",async()=>{await api("/api/run",{});notify("正在检查所选类型的近三天日榜、本周榜和本月榜。");});
 action("start-ai",async()=>{
   const ids=pendingPapers().slice(0,20).map(p=>p.id);
   if(!ids.length) throw new Error("当前筛选没有待解读的论文");
@@ -296,7 +302,7 @@ action("tag-toggle",async()=>{tagsExpanded=!tagsExpanded;renderTags();});
 action("save-settings",async()=>{
   const values={};
   for(const key of ["auto","daily","weekly","monthly"]) values[key]=$("cfg-"+key).checked;
-  values.backfill_days=Number($("cfg-backfill_days").value);
+  if(!$("cfg-time").reportValidity()) return;
   values.time=$("cfg-time").value;
   await api("/api/settings",values); notify("自动获取设置已保存"); await loadSettings(Object.keys(values));
 });

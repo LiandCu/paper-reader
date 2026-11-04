@@ -1,4 +1,4 @@
-﻿param([ValidateSet('Install','Remove','Status')][string]$Action='Status',[string]$At='09:00')
+﻿param([ValidateSet('Install','Remove','Status')][string]$Action='Status',[string]$At='20:00')
 $ErrorActionPreference='Stop'
 [Console]::OutputEncoding=[Text.UTF8Encoding]::new($false)
 $root=[IO.Path]::GetFullPath($PSScriptRoot).TrimEnd('\')

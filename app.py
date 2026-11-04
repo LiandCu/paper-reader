@@ -112,7 +112,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             if parsed.path=="/api/settings":
                 return self.reply({"settings":core.settings(),"has_key":core.safe_path("config","key.dat").exists(),
                     "task_installed":tasks.task_exists(),"root":str(core.ROOT),
-                    "latest":core.latest_periods(),"status":tasks.status()})
+                    "latest":core.current_periods(),"status":tasks.status()})
             if parsed.path=="/api/status":
                 return self.reply(tasks.status())
             if parsed.path=="/api/history":

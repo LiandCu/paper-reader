@@ -80,14 +80,14 @@ class BehaviorTests(unittest.TestCase):
         self.assertEqual(core.latest_periods()[2]["period"],"2026-09")
         self.assertEqual(core.cutoff_date(dt.date(2026,5,31)),dt.date(2026,2,28))
         self.assertEqual(core.cutoff_date(dt.date(2026,1,31)),dt.date(2025,10,31))
-    def test_hf_date_validation_native_order_and_top_twenty(self):
+    def test_hf_date_validation_native_order_and_top_ten(self):
         props={"dateString":"2026-10-30","periodType":"day","dailyPapers":[
             {"paper":{"id":f"2610.{i:05}","title":f"Paper {i}","summary":"Original","upvotes":i}}
             for i in range(25)]}
         text='<div data-target="DailyPapers" data-props="'+html.escape(json.dumps(props),quote=True)+'"></div>'
         with patch.object(core,"request",return_value=text):
             rows,total=core.fetch_report(core.period("daily","2026-10-30"))
-            self.assertEqual((len(rows),total),(20,25))
+            self.assertEqual((len(rows),total),(10,25))
             self.assertEqual(rows[0]["id"],"2610.00000")
             with self.assertRaisesRegex(ValueError,"日期"):
                 core.fetch_report(core.period("daily","2026-10-29"))
@@ -134,7 +134,7 @@ class BehaviorTests(unittest.TestCase):
             return [self.row(ids[spec["kind"]])],1
         with patch.object(core,"get_key",return_value="fake-key"),patch.object(core,"fetch_latest_daily",side_effect=self.latest_from_mock),patch.object(core,"fetch_report",side_effect=fetch) as hf,patch.object(core,"ai_read",side_effect=RuntimeError("HTTP 401")) as ai:
             tasks.run("manual")
-            self.assertEqual(hf.call_count,3)
+            self.assertEqual(hf.call_count,5)
             ai.assert_not_called()
         self.assertEqual(core.stats()["papers"],3)
     def test_unreadable_key_does_not_block_collection(self):
@@ -150,7 +150,7 @@ class BehaviorTests(unittest.TestCase):
         self.assertEqual(core.stats()["papers"],0)
     def test_failed_auto_period_not_retried_same_day(self):
         self.save("daily","2026-10-30")
-        cfg=core.settings();cfg.update(auto=True,weekly=False,monthly=False,backfill_days=1)
+        cfg=core.settings();cfg.update(auto=True,time="09:00",weekly=False,monthly=False,backfill_days=1)
         core.atomic_json(core.safe_path("config","settings.json"),cfg)
         with patch.object(core,"fetch_latest_daily",side_effect=self.latest_from_mock),patch.object(core,"fetch_report",side_effect=RuntimeError("offline")) as fetch:
             tasks.run("auto"); tasks.run("auto")
@@ -182,7 +182,7 @@ class BehaviorTests(unittest.TestCase):
     def test_fetch_then_auto_ai_only_reads_unprocessed_candidates_once(self):
         self.enable_after_fetch()
         rows=[self.row(f"2610.{i:05}") for i in range(25)]
-        self.save("daily","2026-10-30",rows)
+        self.save("weekly","2026-W44",rows)
         with core.db() as con:
             con.execute("UPDATE papers SET ai_state='done',translation='已有翻译' WHERE id='2610.00000'")
             con.execute("UPDATE papers SET ai_state='failed' WHERE id='2610.00001'")
@@ -195,18 +195,22 @@ class BehaviorTests(unittest.TestCase):
             seen.append(pid)
             with core.db() as con:con.execute("UPDATE papers SET ai_state='done' WHERE id=?",(pid,))
         with patch.object(core,"get_key",return_value="fake"),patch.object(core,"fetch_report",return_value=(rows,25)),patch.object(core,"ai_read",side_effect=reading):
-            tasks.run("manual",core.period("daily","2026-10-30"))
+            tasks.run("manual",core.period("weekly","2026-W44"))
         self.assertEqual(seen,[f"2610.{i:05}" for i in range(2,22)])
         with core.db() as con:
             self.assertEqual(con.execute("SELECT translation FROM papers WHERE id='2610.00000'").fetchone()[0],"已有翻译")
     def test_auto_fetch_chains_ai_and_repeated_start_does_not_read_twice(self):
-        self.enable_after_fetch(auto=True,weekly=False,monthly=False,backfill_days=1)
-        today=core.period("daily",core.now().date().isoformat())
+        self.enable_after_fetch(auto=True,time="09:00",weekly=False,monthly=False,backfill_days=1)
+        def fetching(spec,deadline):
+            if spec["period"]==core.now().date().isoformat():
+                return [self.row()],1
+            raise core.ReportUnavailable("no day")
         def reading(pid,cfg,deadline):
             with core.db() as con:con.execute("UPDATE papers SET ai_state='done' WHERE id=?",(pid,))
-        with patch.object(core,"get_key",return_value="fake"),patch.object(core,"fetch_latest_daily",return_value=(today,[self.row()],1)) as latest,patch.object(core,"fetch_report",side_effect=core.ReportUnavailable("no day")),patch.object(core,"ai_read",side_effect=reading) as ai:
+        with patch.object(core,"get_key",return_value="fake"),patch.object(core,"fetch_latest_daily") as latest,patch.object(core,"fetch_report",side_effect=fetching) as fetch,patch.object(core,"ai_read",side_effect=reading) as ai:
             tasks.run("auto");tasks.run("auto")
-            latest.assert_called_once();ai.assert_called_once()
+            latest.assert_not_called();ai.assert_called_once()
+            self.assertEqual(fetch.call_count,3)
     def test_auto_ai_without_key_or_with_failed_key_keeps_abstract(self):
         self.enable_after_fetch()
         for failure in [None,RuntimeError("cannot decrypt")]:
@@ -326,11 +330,11 @@ class BehaviorTests(unittest.TestCase):
             server.shutdown();server.server_close();thread.join()
 
     def test_acquisition_never_loads_key_even_when_ai_is_configured(self):
-        cfg=core.settings();cfg.update(auto=True,daily=True,weekly=False,monthly=False,backfill_days=1)
+        cfg=core.settings();cfg.update(auto=True,time="09:00",daily=True,weekly=False,monthly=False,backfill_days=1)
         core.atomic_json(core.safe_path("config","settings.json"),cfg)
         with patch.object(core,"get_key",side_effect=AssertionError("acquisition must not read key")) as key,patch.object(core,"fetch_latest_daily",side_effect=self.latest_from_mock),patch.object(core,"fetch_report",return_value=([self.row()],1)) as fetch,patch.object(core,"ai_read") as ai:
             tasks.run("auto")
-            self.assertEqual(fetch.call_count,2)
+            self.assertEqual(fetch.call_count,3)
             key.assert_not_called();ai.assert_not_called()
     def test_ai_only_processes_requested_papers(self):
         self.save("daily","2026-10-30")

@@ -13,6 +13,8 @@
 !/tests/
 /tests/*
 !/tests/test_behavior.py
+!/tests/test_evening.py
+!/tests/test_period_selection.py
 !/config/
 /config/*
 !/config/manifest.json

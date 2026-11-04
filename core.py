@@ -10,7 +10,7 @@ ROOT = Path(__file__).resolve().parent
 APP_ID = "LocalPaperReader_7ec94129"
 TASK_NAME = APP_ID
 TZ = dt.timezone(dt.timedelta(hours=8))
-DEFAULTS = {"auto":False,"daily":True,"weekly":True,"monthly":True,"time":"09:00",
+DEFAULTS = {"auto":False,"daily":True,"weekly":True,"monthly":True,"time":"20:00",
             "ai_enabled":True,"ai_after_fetch":False,"model":"deepseek-flash","intro_limit":300,
             "daily_ai_limit":30,"backfill_days":7}
 ALLOWED_HOSTS = {"huggingface.co","api.deepseek.com"}
@@ -102,6 +102,7 @@ def initialize():
         CREATE TABLE IF NOT EXISTS usage(
           day TEXT PRIMARY KEY,calls INTEGER NOT NULL DEFAULT 0,
           input_tokens INTEGER NOT NULL DEFAULT 0,output_tokens INTEGER NOT NULL DEFAULT 0);
+        CREATE TABLE IF NOT EXISTS evening_runs(day TEXT PRIMARY KEY);
         """)
         columns = {r[1] for r in con.execute("PRAGMA table_info(papers)")}
         if "keywords" not in columns:
@@ -283,6 +284,20 @@ def period(kind, value):
     return {"id":kind+":"+value,"kind":kind,"period":value,"start":start.isoformat(),
             "end":end.isoformat(),"source":"https://huggingface.co/papers/"+route}
 
+def current_periods(today=None):
+    today = today or now().date()
+    # HF weeks start on Sunday; shifting one day gives the matching ISO week number.
+    week = (today + dt.timedelta(days=1)).isocalendar()
+    return [period("daily", today.isoformat()),
+            period("weekly", f"{week.year}-W{week.week:02}"),
+            period("monthly", today.strftime("%Y-%m"))]
+
+def manual_periods(today=None):
+    today = today or now().date()
+    daily, weekly, monthly = current_periods(today)
+    previous_days = [period("daily", (today - dt.timedelta(days=offset)).isoformat()) for offset in (1, 2)]
+    return [daily, *previous_days, weekly, monthly]
+
 def latest_periods(today=None):
     today = today or now().date()
     last_saturday = today-dt.timedelta(days=(today.weekday()+1)%7+1)
@@ -325,6 +340,9 @@ def fetch_latest_daily(deadline=None):
     rows,total=parse_report(props,spec)
     return spec,rows,total
 
+def paper_limit(kind):
+    return {"daily": 10, "weekly": 20, "monthly": 20}[kind]
+
 def parse_report(props,spec):
     if not props:
         raise ValueError("HF 榜单结构变化，本期未保存")
@@ -334,6 +352,7 @@ def parse_report(props,spec):
     raw = props.get("dailyPapers")
     if not isinstance(raw,list):
         raise ValueError("HF 榜单结构变化，本期未保存")
+    limit = paper_limit(spec["kind"])
     result,seen = [],set()
     for entry in raw:
         paper = entry.get("paper",{})
@@ -350,7 +369,7 @@ def parse_report(props,spec):
             raise ValueError("论文文本过长，拒绝保存")
         seen.add(pid)
         result.append({"id":pid,"title":title,"abstract":abstract,"votes":max(0,int(paper.get("upvotes",0)))})
-        if len(result)==20:
+        if len(result)==limit:
             break
     if raw and not result:
         raise ValueError("无法识别论文 ID，本期未保存")
@@ -455,6 +474,7 @@ def cleanup(today=None):
         con.execute("DELETE FROM papers WHERE NOT EXISTS(SELECT 1 FROM entries WHERE entries.paper_id=papers.id)")
         con.execute("DELETE FROM attempts WHERE run_date < ?",(cutoff,))
         con.execute("DELETE FROM usage WHERE day < ?",(cutoff,))
+        con.execute("DELETE FROM evening_runs WHERE day < ?",(cutoff,))
     for path in safe_path("cache").iterdir():
         if path.is_file() and not path.is_symlink() and time.time()-path.stat().st_mtime>86400:
             path.unlink()

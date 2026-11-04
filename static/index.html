@@ -12,7 +12,7 @@
 <section id="summary" class="stats"><div><small>已收录论文</small><strong id="stat-papers">0</strong></div><div><small>已完成摘要解读</small><strong id="stat-read">0</strong></div><div><small>已保存榜单</small><strong id="stat-reports">0</strong></div><div><small>本日 AI 调用</small><strong id="stat-calls">0</strong></div></section>
 <section class="operations" aria-label="获取与AI处理">
 <div class="operation-card"><div class="operation-title"><span class="step-number">01</span><h2>获取论文</h2></div>
-<p id="fetch-description" class="muted">从 Hugging Face 获取实际发布的最新日榜及已结束的周月榜，每期最多 20 篇。可在设置中开启获取后自动 AI 解读。</p>
+<p id="fetch-description" class="muted">按已勾选的类型检查今天、昨天和前天的日榜（每天最多 10 篇），以及本周和本月的榜单（各最多 20 篇）。<span id="fetch-ai-note"></span></p>
 <div class="actions"><button id="update" class="primary">获取论文</button><button id="stop-fetch" class="secondary" disabled title="只停止当前获取任务，自动计划设置不变">停止获取论文</button></div>
 <p id="fetch-message" class="operation-status" role="status">尚未获取论文</p></div>
 <div class="operation-card"><div class="operation-title"><span class="step-number">02</span><h2>AI 翻译与简介</h2></div>
@@ -36,21 +36,22 @@
 <section id="history" hidden><div class="panel"><h2>获取记录</h2><p class="muted">失败不会自动重试。需要时可重新手动获取；AI 失败不会影响已有摘要。</p><div id="history-list"></div></div></section>
 <section id="settings" hidden>
 <div class="settings-grid">
-<div class="panel"><h2>自动获取</h2><p class="muted">使用 Windows 普通用户计划任务。登录后延迟两分钟检查，处理完退出。</p>
-<label class="switch-row"><span>启用自动获取<small>同时开启登录及打开程序时补查</small></span><input id="cfg-auto" type="checkbox"></label>
-<div class="checks"><label><input id="cfg-daily" type="checkbox"> 每日日报</label><label><input id="cfg-weekly" type="checkbox"> 每周周报</label><label><input id="cfg-monthly" type="checkbox"> 每月月报</label></div>
-<div class="two"><label>北京时间<input id="cfg-time" type="time"></label><label>补抓最近几天<input id="cfg-backfill_days" type="number" min="1" max="7"></label></div>
+<div class="panel"><h2>晚间自动补做</h2><p class="muted">每天到设定时间后，检查当天还缺哪些榜单或解读。手动获取和解读都已完成时直接跳过。</p>
+<label class="switch-row"><span>启用晚间自动补做<small>通过 Windows 普通用户计划任务运行，完成后退出</small></span><input id="cfg-auto" type="checkbox"></label>
+<div class="checks"><label><input id="cfg-daily" type="checkbox"> 近三天日榜</label><label><input id="cfg-weekly" type="checkbox"> 本周榜</label><label><input id="cfg-monthly" type="checkbox"> 本月榜</label></div>
+<label>每日补做时间（北京时间）<input id="cfg-time" type="time" required></label>
+<p class="note">默认 20:00。当天晚于设定时间登录或打开程序，也会检查是否需要补做。已获取摘要时，可按 AI 设置直接补解读。</p>
 <p id="schedule-state" class="note"></p><button id="save-settings" class="primary">保存自动获取设置</button></div>
 <div class="panel"><h2>DeepSeek 阅读</h2><p class="muted">仅将标题和摘要发给 DeepSeek。不填写密钥也能获取论文；调用受每日上限限制，失败后不重试。</p>
 <label>API Key<input id="api-key" type="password" autocomplete="off" placeholder="输入新的 API Key" maxlength="512"></label><p id="key-state" class="note"></p>
 <div class="actions"><button id="save-key" class="secondary">保存 / 更新密钥</button><button id="test-key" class="secondary">测试连接与模型</button><button id="delete-key" class="quiet danger-text">删除密钥</button></div>
-<label class="switch-row"><span>获取后自动翻译与简介<small>适用于定时、登录补查和手动获取；保存后生效</small></span><input id="cfg-ai_after_fetch" type="checkbox"></label>
-<p class="note">先保存摘要，再自动解读本次获取中尚未处理的论文，每轮最多 20 篇，优先最新日榜。已有解读和曾失败的论文不自动重做；没有密钥、达到限额或调用失败时保留摘要。可随时关闭此开关并点击「保存 AI 设置」，或停止当前 AI。</p>
+<label class="switch-row"><span>获取后自动翻译与简介<small>适用于手动获取和晚间补做，点击「保存 AI 设置」生效</small></span><input id="cfg-ai_after_fetch" type="checkbox"></label>
+<p class="note">开启后，手动获取会立即解读一批（最多 20 篇）。晚间补做会检查上述榜单内已保存的摘要，只处理尚未尝试的论文。当天没有剩余额度、没有密钥或调用失败时，已保存的摘要可继续阅读。</p>
 <label>模型名称<input id="cfg-model" list="models" maxlength="100" required><datalist id="models"></datalist></label>
 <div class="two"><label>简介最多字数<input id="cfg-intro_limit" type="number" min="100" max="1000" step="1" required></label><label>每日 AI 请求上限（1～100 次）<input id="cfg-daily_ai_limit" type="number" min="1" max="100" step="1" required aria-describedby="ai-settings-state"></label></div>
 <p class="note">每日上限按调用尝试次数计数；修改不会清零今日次数。保存后从下一篇论文生效，已发出的请求会继续完成。模型连接测试不生成论文解读。</p>
 <button id="save-ai-settings" class="primary">保存 AI 设置</button><p id="ai-settings-state" class="note" role="status" aria-live="polite"></p></div>
-<div class="panel"><h2>手动补抓</h2><p class="muted">最多每期 20 篇，日榜可选今天或历史日期，周月榜只能选择已结束的周期，均限最近三个月。无对应榜单时跳过，不以其他日期替代。</p>
+<div class="panel"><h2>手动补抓指定榜单</h2><p class="muted">只检查下方指定的一期，可选择最近三个月内的日期、本周、本月或历史周期。日榜最多 10 篇，周榜和月榜各最多 20 篇。来源没有对应榜单时跳过。</p>
 <label>榜单类型<select id="manual-kind"><option value="daily">日报 · YYYY-MM-DD</option><option value="weekly">周报 · YYYY-Www</option><option value="monthly">月报 · YYYY-MM</option></select></label>
 <label>日期 / 周号 / 月份<input id="manual-period" placeholder="例如 2026-10-30"></label><button id="manual-run" class="secondary">获取所选榜单</button></div>
 <div class="panel"><h2>存储与退出</h2><p class="muted">程序及项目数据保存在 D:\classproject\game\paper-reader。摘要、翻译、标签和简介保留滚动三个自然月；不保存论文全文或附件。</p>
